@@ -1,0 +1,39 @@
+# Smart register — sdkconfig defaults (ESP32-C6, Zigbee sleepy end device).
+# See docs/architecture.md (sleep & polling strategy) and docs/power-budget.md.
+
+CONFIG_IDF_TARGET="esp32c6"
+
+# ---- Flash / partitions -----------------------------------------------------
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# ---- Zigbee: end device on the native 802.15.4 radio ------------------------
+CONFIG_ZB_ENABLED=y
+CONFIG_ZB_ZED=y
+CONFIG_ZB_RADIO_NATIVE=y
+
+# ---- Power management: automatic light sleep --------------------------------
+# CONFIG_PM_ENABLE + tickless idle + esp_zb_sleep_enable(true) in code
+# = ~35-50 uA sleep floor. Deep sleep deliberately not used (stack state).
+CONFIG_PM_ENABLE=y
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
+CONFIG_FREERTOS_IDLE_TIME_BEFORE_SLEEP=3
+# 1 kHz tick keeps timing math simple and is required for good tickless idle.
+CONFIG_FREERTOS_HZ=1000
+# Let light sleep power down flash / peripherals where possible.
+CONFIG_ESP_SLEEP_POWER_DOWN_FLASH=y
+CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP=y
+
+# ---- NVS --------------------------------------------------------------------
+CONFIG_NVS_ENCRYPTION=n
+
+# ---- Logging: keep the always-on console cheap ------------------------------
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+# UART console on the debug header would keep the clock awake; USB-Serial-JTAG
+# is fine for bring-up. Drop to LOG_DEFAULT_LEVEL_NONE for power soak tests.
+
+# ---- Misc -------------------------------------------------------------------
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=4096

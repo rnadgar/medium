@@ -1,0 +1,44 @@
+menu "Smart Register Board"
+
+    choice SMART_REGISTER_BOARD
+        prompt "Board variant"
+        default BOARD_DEVKITC1
+        help
+            Selects the pin map in main/board.h. The table in
+            docs/architecture.md is the single source of truth.
+
+        config BOARD_DEVKITC1
+            bool "ESP32-C6-DevKitC-1 bring-up jig"
+            help
+                DevKitC-1 with DRV8833 / SDP810 / limit switches on a
+                breadboard. STATUS_LED on GPIO8 (onboard).
+
+        config BOARD_REVA
+            bool "Smart register Rev A PCB"
+            help
+                First register PCB spin. STATUS_LED on GPIO20.
+    endchoice
+
+    config SMART_REGISTER_LONG_POLL_MS
+        int "Zigbee long poll interval (ms)"
+        default 5000
+        range 1000 7000
+        help
+            Sleepy end device long poll. Parents buffer indirect
+            transmissions ~7.68 s, so keep this comfortably below that
+            (docs/architecture.md sleep & polling strategy).
+
+    config SMART_REGISTER_FAST_POLL_WINDOW_MS
+        int "Fast poll window after commands/reports (ms)"
+        default 8000
+        range 1000 60000
+
+    config PRESSURE_SENSOR_XGZP
+        bool "Use XGZP6897D instead of SDP810"
+        default n
+        help
+            Cost-down on-board pressure sensor option. The driver is
+            currently a stub (pressure.c) with the auto-zero hook in place;
+            the premium SDP810 on the remote-sensor header is the default.
+
+endmenu

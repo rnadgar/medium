@@ -13,10 +13,11 @@ flowchart LR
     end
     BATT --> RPP["Reverse-polarity P-FET"]
     RPP --> BUCK["TPS62125 buck\n3.3 V always-on, Iq ~13 uA"]
-    RPP --> LSW["TPS22919 load switch\nMOTOR_PWR_EN"]
+    RPP --> LSW["TPS22810 load switch\nMOTOR_PWR_EN"]
     BUCK --> C6["ESP32-C6-MINI-1\nZigbee sleepy end device"]
+    BUCK --> SSW["SiP32431 load switch\n3V3_SENS, MOTOR_PWR_EN"]
     LSW --> DRV["DRV8833\nstepper driver"]
-    LSW --> SDP["SDP810-500Pa\ndifferential pressure (I2C)"]
+    SSW --> SDP["Pressure sensor\nXGZP6897D onboard / SDP810 header (I2C)"]
     DRV --> MOT["28BYJ-48 stepper\n(bipolar mod) + gear train"]
     MOT --> VANES["Linked damper vanes"]
     SW1["Limit switch OPEN"] --> C6
@@ -31,8 +32,17 @@ Two power domains:
 
 - **Always-on 3.3 V** (TPS62125): the ESP32-C6 and nothing else. The buck's
   ~13 µA quiescent current plus the C6 in light sleep sets the sleep floor.
-- **Switched VBAT** (TPS22919, `MOTOR_PWR_EN`): DRV8833 + pressure sensor.
-  Energized only during moves and pressure samples; parked leakage ≤ 100 nA.
+- **Switched VBAT "VMOT"** (TPS22810, `MOTOR_PWR_EN`): DRV8833 stepper
+  driver. (TPS22919/SiP32431-class switches are 5.5 V-max parts — below the
+  7.2 V fresh pack — hence the 18 V-rated TPS22810 here.)
+- **Switched 3.3 V "3V3_SENS"** (SiP32431 from the 3.3 V rail, same
+  `MOTOR_PWR_EN` signal): pressure sensor + I2C pull-ups. Energized only
+  during moves and pressure samples; parked leakage ≤ 1 µA total.
+
+The pressure sensor has two mutually exclusive fit options: XGZP6897D
+directly on board (cost-down default) or an SDP810 connected to the 5-pin
+remote-sensor header (premium accuracy; also mechanically flexible for tube
+routing).
 
 ## Pin map
 
@@ -50,13 +60,17 @@ selected per-board with `idf.py menuconfig` (Kconfig choice `BOARD_*`).
 | `I2C_SDA` | 6 | 6 | IO | Pressure sensor bus (on switched rail) |
 | `I2C_SCL` | 7 | 7 | O | |
 | `BOOT_BTN` | 9 | 9 | I | Boot strap; long-press = factory reset / pair |
-| `MOTOR_PWR_EN` | 10 | 10 | O | TPS22919 EN, high = motor+sensor powered |
-| `LIMIT_SENSE_EN` | 11 | 11 | O | Sources the limit-switch pull-ups during moves only |
 | `USB_D-` / `USB_D+` | 12 / 13 | (USB conn) | IO | USB-Serial-JTAG flash/debug |
 | `UART_TX` / `UART_RX` | 16 / 17 | 16 / 17 | O/I | Debug header |
 | `LIMIT_OPEN` | 18 | 18 | I | Closes to GND at full-open travel |
 | `LIMIT_CLOSED` | 19 | 19 | I | Closes to GND at full-closed travel |
 | `STATUS_LED` | 20 | 8 (onboard) | O | Identify blink, fault codes |
+| `MOTOR_PWR_EN` | 21 | 21 | O | Load-switch EN, high = motor + sensor rails powered |
+| `LIMIT_SENSE_EN` | 22 | 22 | O | Sources the limit-switch pull-ups during moves only |
+| `SENS_IRQ` (spare) | 23 | 23 | I | Reserved on the remote-sensor header |
+
+> GPIO10/11 are **not bonded out** on the ESP32-C6-MINI-1 module — do not
+> assign them. Free for future use: GPIO14, GPIO15.
 
 Limit switches are wired switch→GND on the input side with their pull-up side
 fed from `LIMIT_SENSE_EN`, so there is **zero standby current** through the

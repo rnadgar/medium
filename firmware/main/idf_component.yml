@@ -1,0 +1,7 @@
+# Managed component manifest — resolved by the IDF component manager at
+# the first `idf.py build` (CI). Versions pinned to the 1.6.x line of the
+# esp-zigbee-sdk libraries current as of mid-2025; bump both together.
+dependencies:
+  idf: ">=5.3.0"
+  espressif/esp-zigbee-lib: "~1.6.0"
+  espressif/esp-zboss-lib: "~1.6.0"

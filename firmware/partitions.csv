@@ -1,0 +1,14 @@
+# Smart register partition table — 4 MB flash (ESP32-C6-MINI-1).
+#
+# zb_storage / zb_fct are required by the ZBOSS stack (NVRAM + factory
+# calibration). OTA slots are reserved now (phase 2 per architecture.md);
+# the bootloader runs `factory` until an OTA marks ota_0/ota_1 valid.
+# Name,      Type, SubType,  Offset,   Size
+nvs,         data, nvs,      0x9000,   0x6000,
+otadata,     data, ota,      0xf000,   0x2000,
+phy_init,    data, phy,      0x11000,  0x1000,
+zb_storage,  data, fat,      0x12000,  0x4000,
+zb_fct,      data, fat,      0x16000,  0x1000,
+factory,     app,  factory,  0x20000,  0x100000,
+ota_0,       app,  ota_0,    0x120000, 0x160000,
+ota_1,       app,  ota_1,    0x280000, 0x160000,

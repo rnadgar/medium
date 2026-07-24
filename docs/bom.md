@@ -16,14 +16,16 @@ the MPN directly), or by LCSC number if you have JLCPCB assemble the board.
 | A1 | Zigbee module | ESP32-C6-MINI-1-N4 | SMD module | 1 | 3.20 | PCB antenna; keep-out zone per Espressif AN |
 | A2 | Buck converter 3.3 V | TPS62125DSGR | WSON-8 2×2 | 1 | 1.60 | 3–17 V in, Iq ≈ 13 µA, 300 mA |
 | A3 | Stepper driver | DRV8833PWPR | HTSSOP-16 | 1 | 1.80 | Dual H-bridge; drives bipolar-modified 28BYJ-48 |
-| A4 | Load switch (motor rail) | TPS22919DCKR | SC70-6 | 1 | 0.60 | ≤ 100 nA off-leakage; gates DRV8833 + pressure sensor |
-| A5 | Reverse-polarity P-FET | DMG2305UX-7 | SOT-23 | 1 | 0.40 | User-replaceable cells demand it |
-| A6 | Battery-sense P-FET | DMG3415U-7 | SOT-23 | 1 | 0.40 | High-side switch for the VBAT divider |
-| A7 | N-FET (level shift, sense-en) | 2N7002-7 | SOT-23 | 2 | 0.20 | Divider gate drive + limit-switch bias |
-| A8 | Differential pressure sensor | **SDP810-500PA** | barbed, SMD-ish | 1 | 28.00 | ±500 Pa, I2C. The BOM cost driver — see A8b |
-| A8b | *Cost-down alternate* | XGZP6897D (±500 Pa, I2C) | DIP-8 w/ ports | (1) | 4.00 | Second footprint on the board; needs firmware auto-zero. Fit A8 **or** A8b |
+| A4 | Load switch (motor rail) | TPS22810DRVR | WSON-6 2×2 | 1 | 0.70 | 18 V rated — a 5.5 V-max part (TPS22919/SiP32431) cannot sit on the 7.2 V fresh pack |
+| A4b | Load switch (sensor 3.3 V rail) | SIP32431DR3-T1GE3 | SC70-6 | 1 | 0.50 | 10 nA leakage; same MOTOR_PWR_EN control line |
+| A5 | Reverse-polarity P-FET | AO3401A | SOT-23 | 1 | 0.30 | ±12 V Vgs handles the 7.2 V fresh pack; also battery-sense high-side (qty 2 total) |
+| A6 | Battery-sense P-FET | AO3401A | SOT-23 | 1 | 0.30 | (counted with A5 in the schematic as Q1/Q2) |
+| A7 | N-FET (divider gate drive) | 2N7002-7-F | SOT-23 | 1 | 0.10 | |
+| A8 | Pressure sensor (on-board default) | **XGZP6897D (±500 Pa, I2C)** | DIP-8 w/ ports | 1 | 4.00 | Fitted on the board (`U7`); needs firmware auto-zero (implemented) |
+| A8b | *Premium alternate* | SDP810-500PA | barbed module | (1) | 28.00 | Connects to the 5-pin remote-sensor header `J5` instead of fitting U7; best zero-point stability |
 | A9 | USB ESD protection | USBLC6-2SC6 | SOT-23-6 | 1 | 0.40 | |
-| A10 | Status LED | 0603 green | 0603 | 1 | 0.10 | |
+| A10 | Status LED | 0603 green (e.g. 150060GS75000) | 0603 | 1 | 0.10 | |
+| A11 | USB bench-power Schottky | SS14 | SMA | 1 | 0.15 | Feeds VBAT_RAW from USB 5 V (pre-FET, cannot charge the cells) |
 
 ## B. Custom PCB — passives & electromechanical
 
@@ -39,7 +41,7 @@ the MPN directly), or by LCSC number if you have JLCPCB assemble the board.
 | B8 | I2C pull-ups | 4.7 kΩ | 0603 | 2 | 0.05 | To switched rail (no standby drain) |
 | B9 | Misc resistors | 100 Ω, 1 kΩ, 10 kΩ, 100 kΩ | 0603 | ~12 | 0.20 | Gates, LED, straps, button pull |
 | B10 | USB-C receptacle | GCT USB4105-GF-A | 16-pin SMD | 1 | 0.90 | Flash/debug via USB-Serial-JTAG |
-| B11 | Tactile switches (BOOT, RST) | Panasonic EVQ-P7C01P or equiv. | SMD | 2 | 0.40 | BOOT doubles as pair/factory-reset |
+| B11 | Tactile switches (BOOT, RST) | C&K KMR221GLFS | SMD | 2 | 0.60 | BOOT doubles as pair/factory-reset |
 | B12 | Battery connector | JST S2B-PH-K-S | PH 2-pin RA | 1 | 0.20 | Mates battery holder pigtail |
 | B13 | Motor connector | JST B4B-PH-K-S | PH 4-pin | 1 | 0.25 | Bipolar-modified 28BYJ-48 (4 wires) |
 | B14 | Limit-switch connector | JST B3B-PH-K-S | PH 3-pin | 1 | 0.20 | Common bias + 2 switch lines |
@@ -94,8 +96,6 @@ Multi-register houses: parts A+B+D scale per register; C amortizes.
 
 ## Substitution notes
 
-- **TPS22919 → SiP32431DR3-T1GE3** (Vishay): pin-compatible-ish load switch,
-  ≤ 10 nA leakage; footprint accepts either — check the schematic variant.
 - **SDP810 → SDP31/SDP32** (SMD): same sensing core, needs a printed manifold
   instead of barbs; consider for a later rev.
 - **28BYJ-48 → 35BYJ-46 (12 V run at pack voltage)**: fallback if vane torque
