@@ -1,0 +1,40 @@
+name: pcb
+
+on:
+  push:
+    paths: ['hardware/**', '.github/workflows/pcb.yml']
+  pull_request:
+    paths: ['hardware/**', '.github/workflows/pcb.yml']
+
+jobs:
+  erc-drc:
+    runs-on: ubuntu-latest
+    container: ghcr.io/kicad/kicad:8.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: ERC
+        run: |
+          kicad-cli sch erc --exit-code-violations \
+            hardware/pcb/smart-register/smart-register.kicad_sch
+      - name: DRC
+        run: |
+          kicad-cli pcb drc --exit-code-violations \
+            hardware/pcb/smart-register/smart-register.kicad_pcb
+
+  fab-outputs:
+    runs-on: ubuntu-latest
+    container: ghcr.io/kicad/kicad:8.0
+    needs: erc-drc
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate gerbers + drill
+        run: |
+          mkdir -p out/gerbers
+          kicad-cli pcb export gerbers -o out/gerbers/ \
+            hardware/pcb/smart-register/smart-register.kicad_pcb
+          kicad-cli pcb export drill -o out/gerbers/ \
+            hardware/pcb/smart-register/smart-register.kicad_pcb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fab-outputs
+          path: out/

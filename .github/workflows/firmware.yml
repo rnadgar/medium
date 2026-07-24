@@ -1,0 +1,33 @@
+name: firmware
+
+on:
+  push:
+    paths: ['firmware/**', '.github/workflows/firmware.yml']
+  pull_request:
+    paths: ['firmware/**', '.github/workflows/firmware.yml']
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run host unit tests
+        run: make -C firmware/test/host test
+
+  esp-idf-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ESP-IDF project (esp32c6)
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.3
+          target: esp32c6
+          path: firmware
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-bin
+          path: |
+            firmware/build/*.bin
+            firmware/build/flasher_args.json
+          if-no-files-found: warn
