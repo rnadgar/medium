@@ -1,0 +1,171 @@
+blueprint:
+  name: "OpenRegister: pressure floor guard"
+  description: >-
+    System-level guard that keeps enough total register area open to protect
+    the HVAC blower, complementing the per-device pressure fail-safe.
+
+    It sums current_position across all selected registers (100 = fully open)
+    and, when the sum falls below the configured floor, force-opens the
+    most-closed reachable register to 100%. The resulting position change
+    re-triggers the automation, so it keeps opening registers one at a time
+    until the floor is met. Unavailable/unknown registers count as 0 (CLOSED)
+    — a dead-battery register must be assumed shut (see
+    docs/architecture.md, failure modes).
+
+    Optionally notifies when it intervenes and when any register's fail-safe
+    trips.
+  domain: automation
+  author: OpenRegister
+  homeassistant:
+    min_version: "2024.6.0"
+  input:
+    registers:
+      name: Register cover entities
+      description: All SR-4x10 registers on this duct system.
+      selector:
+        entity:
+          domain: cover
+          multiple: true
+    min_open_floor:
+      name: Minimum total open floor
+      description: >-
+        Minimum allowed sum of positions across all registers, in
+        percent-units. 150 means at least 1.5 registers-worth of open area
+        (e.g. one at 100% plus one at 50%). Size it to your blower and duct
+        design.
+      default: 150
+      selector:
+        number:
+          min: 0
+          max: 1000
+          step: 10
+          unit_of_measurement: "%-sum"
+          mode: box
+    notify_service:
+      name: Notify service (optional)
+      description: >-
+        Full notify service to call on interventions and fail-safe trips,
+        e.g. "notify.mobile_app_yourphone". Leave empty for no notifications.
+      default: ""
+      selector:
+        text:
+    tripped_sensors:
+      name: Fail-safe tripped sensors (optional)
+      description: >-
+        The registers' failsafe_tripped binary sensors. When any turns on,
+        a notification is sent (the device has already failed open locally).
+      default: []
+      selector:
+        entity:
+          domain: binary_sensor
+          multiple: true
+
+# Queued: an intervention changes a cover position, which re-triggers this
+# automation for the next floor check; queuing keeps those evaluations serial.
+mode: queued
+max: 10
+max_exceeded: silent
+
+trigger:
+  - platform: state
+    entity_id: !input registers
+    attribute: current_position
+    id: position
+  - platform: time_pattern
+    minutes: "/15"
+    id: periodic
+  - platform: state
+    entity_id: !input tripped_sensors
+    to: "on"
+    id: tripped
+
+variables:
+  registers: !input registers
+  floor_sum: !input min_open_floor
+  notify_service: !input notify_service
+  # Sum of current_position over all registers; unavailable/unknown or
+  # position-less registers contribute 0 (treated as CLOSED — conservative).
+  total_open: >-
+    {%- set ns = namespace(total=0) -%}
+    {%- for c in registers -%}
+      {%- if states(c) not in ['unavailable', 'unknown']
+          and state_attr(c, 'current_position') is not none -%}
+        {%- set ns.total = ns.total + (state_attr(c, 'current_position') | int(0)) -%}
+      {%- endif -%}
+    {%- endfor -%}
+    {{ ns.total }}
+  # Most-closed reachable register that is not already fully open.
+  most_closed: >-
+    {%- set ns = namespace(best='', best_pos=999) -%}
+    {%- for c in registers -%}
+      {%- if states(c) not in ['unavailable', 'unknown']
+          and state_attr(c, 'current_position') is not none -%}
+        {%- set pos = state_attr(c, 'current_position') | int(0) -%}
+        {%- if pos < 100 and pos < ns.best_pos -%}
+          {%- set ns.best = c -%}
+          {%- set ns.best_pos = pos -%}
+        {%- endif -%}
+      {%- endif -%}
+    {%- endfor -%}
+    {{ ns.best }}
+  floor_breached: >-
+    {{ (total_open | int(0)) < (floor_sum | int(0)) }}
+
+action:
+  # 1. Fail-safe trip notification (device has already failed open locally).
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: tripped
+          - condition: template
+            value_template: "{{ notify_service != '' }}"
+        sequence:
+          - service: "{{ notify_service }}"
+            data:
+              title: "HVAC register fail-safe tripped"
+              message: >-
+                {{ trigger.to_state.name }} tripped its overpressure fail-safe
+                and drove its damper fully open. Check filters and other
+                registers.
+    default: []
+  # 2. Pressure floor enforcement: open the most-closed register fully; the
+  #    position change re-triggers this automation, which opens the next one
+  #    if the floor is still not met.
+  - if:
+      - condition: template
+        value_template: "{{ floor_breached and most_closed != '' }}"
+    then:
+      - service: cover.set_cover_position
+        target:
+          entity_id: "{{ most_closed }}"
+        data:
+          position: 100
+      - if:
+          - condition: template
+            value_template: "{{ notify_service != '' }}"
+        then:
+          - service: "{{ notify_service }}"
+            data:
+              title: "HVAC pressure floor guard intervened"
+              message: >-
+                Total register opening was {{ total_open }}%-sum, below the
+                floor of {{ floor_sum }}%-sum. Forced
+                {{ state_attr(most_closed, 'friendly_name') or most_closed }}
+                fully open. Unavailable registers count as closed — check for
+                dead batteries if this repeats.
+  # 3. Floor breached but nothing left to open — everything reachable is
+  #    already at 100%. This is only reachable when too few registers are
+  #    online; alert because manual action is needed.
+  - if:
+      - condition: template
+        value_template: >-
+          {{ floor_breached and most_closed == '' and notify_service != '' }}
+    then:
+      - service: "{{ notify_service }}"
+        data:
+          title: "HVAC pressure floor cannot be met"
+          message: >-
+            Total register opening is {{ total_open }}%-sum (floor
+            {{ floor_sum }}%-sum) and every reachable register is already
+            fully open. One or more registers may be offline (dead battery?)
+            — they are counted as closed.

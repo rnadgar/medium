@@ -1,0 +1,206 @@
+blueprint:
+  name: "OpenRegister: room register control (proportional)"
+  description: >-
+    Proportional control of one OpenRegister SR-4x10 smart register from a room
+    temperature sensor and a target temperature. Runs at a fixed interval,
+    computes the temperature error, maps it across a proportional band to a
+    damper position (100 = fully open = airflow), quantizes the result and
+    only moves the register when the change is at least one quantization step
+    — every skipped move is battery saved.
+
+    Target temperature can come from a number/input_number helper, or — if a
+    climate entity is provided — from that thermostat's setpoint (the climate
+    entity takes precedence while it is available).
+
+    Create one automation from this blueprint per room/register.
+  domain: automation
+  author: OpenRegister
+  homeassistant:
+    min_version: "2024.6.0"
+  input:
+    room_temp_sensor:
+      name: Room temperature sensor
+      description: Temperature sensor located in the room this register serves.
+      selector:
+        entity:
+          domain: sensor
+          device_class: temperature
+    target_temperature:
+      name: Target temperature entity
+      description: >-
+        Number or input_number helper holding the room setpoint (degC).
+        Ignored while the optional climate entity below is set and available.
+      selector:
+        entity:
+          domain:
+            - input_number
+            - number
+    climate_entity:
+      name: Climate entity (optional)
+      description: >-
+        Optional thermostat whose target temperature overrides the helper
+        above. Leave empty to use the helper only.
+      default: ""
+      selector:
+        entity:
+          domain: climate
+    register_cover:
+      name: Register cover entity
+      description: The SR-4x10 cover entity (position 100 = open = airflow).
+      selector:
+        entity:
+          domain: cover
+    hvac_mode:
+      name: Heat/cool mode
+      description: >-
+        heat: open the register when the room is below target.
+        cool: open the register when the room is above target.
+      default: heat
+      selector:
+        select:
+          options:
+            - heat
+            - cool
+    minimum_position:
+      name: Minimum position
+      description: >-
+        Never command the register below this position (%). Use a non-zero
+        value to guarantee some airflow per room; whole-system protection is
+        the job of the pressure floor guard blueprint.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 5
+          unit_of_measurement: "%"
+          mode: slider
+    proportional_band:
+      name: Proportional band
+      description: >-
+        Temperature error (degC) that maps to a fully open register. Example:
+        with a 2.0 degC band, an error of 1.0 degC commands 50% open.
+      default: 2.0
+      selector:
+        number:
+          min: 0.5
+          max: 10
+          step: 0.1
+          unit_of_measurement: "degC"
+          mode: box
+    deadband:
+      name: Deadband
+      description: >-
+        Hold the current position while the absolute temperature error is
+        below this (degC). Prevents hunting around the setpoint.
+      default: 0.3
+      selector:
+        number:
+          min: 0.0
+          max: 2.0
+          step: 0.05
+          unit_of_measurement: "degC"
+          mode: box
+    update_interval:
+      name: Update interval
+      description: How often to re-evaluate the register position (minutes).
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 60
+          step: 1
+          unit_of_measurement: min
+          mode: box
+    position_step:
+      name: Position step quantization
+      description: >-
+        Positions are rounded to multiples of this step, and the register is
+        only moved when the commanded change is at least one step. Larger
+        steps = fewer motor moves = longer battery life.
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 50
+          step: 1
+          unit_of_measurement: "%"
+          mode: slider
+
+mode: single
+max_exceeded: silent
+
+trigger:
+  # Fires every minute; the first condition gates execution down to the
+  # configured update interval (time_pattern cannot take a templated interval).
+  - platform: time_pattern
+    minutes: "/1"
+
+variables:
+  cover_entity: !input register_cover
+  temp_sensor: !input room_temp_sensor
+  target_entity: !input target_temperature
+  climate_entity: !input climate_entity
+  hvac_mode: !input hvac_mode
+  min_position: !input minimum_position
+  prop_band: !input proportional_band
+  deadband: !input deadband
+  update_interval: !input update_interval
+  position_step: !input position_step
+  room_temp: "{{ states(temp_sensor) | float(none) }}"
+  target_temp: >-
+    {%- if climate_entity not in ['', none]
+        and states(climate_entity) not in ['unknown', 'unavailable']
+        and state_attr(climate_entity, 'temperature') is not none -%}
+      {{ state_attr(climate_entity, 'temperature') | float(none) }}
+    {%- else -%}
+      {{ states(target_entity) | float(none) }}
+    {%- endif -%}
+  error_c: >-
+    {%- if room_temp is none or target_temp is none -%}
+      {{ none }}
+    {%- elif hvac_mode == 'cool' -%}
+      {{ (room_temp | float) - (target_temp | float) }}
+    {%- else -%}
+      {{ (target_temp | float) - (room_temp | float) }}
+    {%- endif -%}
+  # P-control: error/band * 100, clamped to [minimum_position, 100].
+  desired_raw: >-
+    {{ [[(min_position | float(0)),
+         (error_c | float(0)) / (prop_band | float(2.0)) * 100] | max,
+        100] | min }}
+  # Quantize to the step, then re-clamp (rounding can leave the clamp range).
+  desired_pos: >-
+    {{ [[(((desired_raw | float(0)) / (position_step | float(10))) | round(0))
+          * (position_step | float(10)),
+         (min_position | float(0))] | max,
+        100] | min | round(0) | int }}
+  current_pos: "{{ state_attr(cover_entity, 'current_position') }}"
+
+condition:
+  # Gate the 1-minute trigger down to the configured interval.
+  - condition: template
+    value_template: "{{ (now().minute % (update_interval | int(5))) == 0 }}"
+  # Inputs must be available and numeric.
+  - condition: template
+    value_template: "{{ room_temp is not none and target_temp is not none }}"
+  # Register must be reachable and report a position.
+  - condition: template
+    value_template: >-
+      {{ states(cover_entity) not in ['unknown', 'unavailable']
+         and current_pos is not none }}
+  # Deadband: hold position while close to setpoint.
+  - condition: template
+    value_template: "{{ (error_c | float(0)) | abs >= (deadband | float(0.3)) }}"
+  # Battery guard: only move when the change is at least one quantization step.
+  - condition: template
+    value_template: >-
+      {{ ((desired_pos | int(0)) - (current_pos | int(0))) | abs
+         >= (position_step | int(10)) }}
+
+action:
+  - service: cover.set_cover_position
+    target:
+      entity_id: !input register_cover
+    data:
+      position: "{{ desired_pos }}"
