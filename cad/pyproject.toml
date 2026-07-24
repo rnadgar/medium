@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smart_register"
+version = "0.1.0"
+description = "Parametric build123d CAD for the open-hardware smart HVAC register"
+requires-python = ">=3.10"
+dependencies = ["build123d>=0.11"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools]
+packages = ["smart_register"]
