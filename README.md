@@ -12,6 +12,12 @@ Wall temp sensor ──► Home Assistant ──► Zigbee ──► register da
                           └──── pressure / battery ◄─────┘
 ```
 
+![assembly](docs/img/assembly_iso.png)
+
+| PCB rev A (front) | Mechanism (faceplate hidden) |
+|---|---|
+| ![pcb](docs/img/pcb_front.png) | ![mechanism](docs/img/assembly_mechanism.png) |
+
 ## Highlights
 
 - **Zigbee sleepy end device** (ESP32-C6) — pairs with Zigbee2MQTT or ZHA and
